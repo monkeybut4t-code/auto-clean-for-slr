@@ -44,14 +44,6 @@ local function getHRP()
     return char:FindFirstChild("HumanoidRootPart")
 end
 
-local function dist3D(a, b)
-    if not a or not b then return math.huge end
-    local dx = b.X - a.X
-    local dy = b.Y - a.Y
-    local dz = b.Z - a.Z
-    return math.sqrt(dx*dx + dy*dy + dz*dz)
-end
-
 -- Validate puddle
 local function isCleanable(part)
     if not part or not part.Parent then return false end
@@ -64,11 +56,11 @@ local function isCleanable(part)
     return true
 end
 
--- Tween movement - FIXED
+-- Tween movement - extract Vector3 from position safely
 local function tweenTo(targetPos)
     local hrp = getHRP()
-    if not hrp or not targetPos then 
-        log("tweenTo: missing HRP or targetPos", "WARN")
+    if not hrp then 
+        log("tweenTo: missing HRP", "WARN")
         return false 
     end
 
@@ -77,16 +69,26 @@ local function tweenTo(targetPos)
         currentTween = nil
     end
 
+    -- Handle both Vector3 and CFrame inputs
+    local targetVec3
+    if typeof(targetPos) == "CFrame" then
+        targetVec3 = targetPos.Position
+    elseif typeof(targetPos) == "Vector3" then
+        targetVec3 = targetPos
+    else
+        log("tweenTo: invalid targetPos type", "WARN")
+        return false
+    end
+
     local startPos = hrp.Position
-    if not startPos or not targetPos then return false end
+    local distance = (targetVec3 - startPos).Magnitude
     
-    local distance = (targetPos - startPos).Magnitude
     if distance < 0.1 then return true end -- Already there
     
     local time = math.clamp(distance / 30 * Config.TweenSpeed, 0.2, 1.5)
 
-    -- Simple CFrame: just the position
-    local goalPos = targetPos + Vector3.new(0, 3, 0)
+    -- Create goal position (Vector3 with height offset)
+    local goalPos = targetVec3 + Vector3.new(0, 3, 0)
     local goalCFrame = CFrame.new(goalPos)
 
     local tweenInfo = TweenInfo.new(
@@ -163,15 +165,20 @@ local function getActivePuddles()
     if not cleanFolder then return {} end
 
     local hrp = getHRP()
-    local myPos = hrp and hrp.Position
+    if not hrp then return {} end
+    
+    local myPos = hrp.Position
     local puddles = {}
 
     for i = 1, Config.TotalPuddles do
         local part = cleanFolder:FindFirstChild(tostring(i))
         if part and isCleanable(part) then
             local okPos, pos = pcall(function() return part.Position end)
-            if okPos and pos then
-                local d = myPos and dist3D(myPos, pos) or 9999
+            if okPos and pos and typeof(pos) == "Vector3" then
+                local dx = pos.X - myPos.X
+                local dy = pos.Y - myPos.Y
+                local dz = pos.Z - myPos.Z
+                local d = math.sqrt(dx*dx + dy*dy + dz*dz)
                 table.insert(puddles, {part = part, pos = pos, dist = d})
             end
         end
