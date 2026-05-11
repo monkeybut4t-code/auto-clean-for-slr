@@ -15,7 +15,12 @@ local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 local currentTween = nil
 local isMoving = false
-local lastPollTime = 0
+
+-- Wait for player to fully load
+if not player then
+    Players.PlayerAdded:Wait()
+    player = Players.LocalPlayer
+end
 
 -- Utility: Safe logging
 local function log(message, level)
@@ -249,25 +254,29 @@ task.spawn(function()
     end
 end)
 
--- Toggle with J key
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
-    
-    if input.KeyCode == Enum.KeyCode.J then
-        Config.Enabled = not Config.Enabled
-        log(string.format("Auto-clean %s", Config.Enabled and "ENABLED" or "DISABLED"), "INFO")
-    elseif input.KeyCode == Enum.KeyCode.K then
-        -- Emergency stop
-        Config.Enabled = false
-        cancelTween()
-        log("Emergency stop activated", "WARN")
-    end
+-- Toggle with J key (safe input handling)
+pcall(function()
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        
+        if input.KeyCode == Enum.KeyCode.J then
+            Config.Enabled = not Config.Enabled
+            log(string.format("Auto-clean %s", Config.Enabled and "ENABLED" or "DISABLED"), "INFO")
+        elseif input.KeyCode == Enum.KeyCode.K then
+            -- Emergency stop
+            Config.Enabled = false
+            cancelTween()
+            log("Emergency stop activated", "WARN")
+        end
+    end)
 end)
 
--- Cleanup on character death
-player.CharacterAdded:Connect(function()
-    cancelTween()
-    log("Character respawned, movement cancelled", "DEBUG")
-end)
+-- Cleanup on character death (safe event connection)
+if player and player.CharacterAdded then
+    player.CharacterAdded:Connect(function()
+        cancelTween()
+        log("Character respawned, movement cancelled", "DEBUG")
+    end)
+end
 
 log(string.format("Configuration loaded (TweenSpeed: %.1f, ArriveDistance: %d)", Config.TweenSpeed, Config.ArriveDistance), "INFO")
