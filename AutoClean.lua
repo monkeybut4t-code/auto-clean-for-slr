@@ -4,7 +4,7 @@ local Config = {
     ArriveDistance = 5,
     PollRate = 1,
     TotalPuddles = 8,
-    DebugMode = false,
+    DebugMode = true, -- ENABLED FOR DEBUGGING
 }
 
 local Players = game:GetService("Players")
@@ -51,28 +51,48 @@ end
 
 -- Validate puddle is cleanable
 local function isCleanable(part)
-    if not part or not part.Parent then return false end
+    if not part or not part.Parent then 
+        log(string.format("Part validation failed: part=%s, hasParent=%s", tostring(part), part and part.Parent and "yes" or "no"), "DEBUG")
+        return false 
+    end
     
     -- Check proximity prompt exists and is enabled
     local prompt = part:FindFirstChildOfClass("ProximityPrompt")
-    if not prompt or not prompt.Enabled then return false end
+    if not prompt then 
+        log(string.format("No ProximityPrompt found on %s", part.Name), "DEBUG")
+        return false 
+    end
+    if not prompt.Enabled then 
+        log(string.format("ProximityPrompt disabled on %s", part.Name), "DEBUG")
+        return false 
+    end
     
     -- Check visibility
-    if part.Transparency >= 1 then return false end
+    if part.Transparency >= 1 then 
+        log(string.format("Part %s is invisible (transparency: %f)", part.Name, part.Transparency), "DEBUG")
+        return false 
+    end
     
+    log(string.format("✓ %s is cleanable", part.Name), "DEBUG")
     return true
 end
 
 -- Safely get puddle folder with fallback paths
 local function getPuddleFolder()
+    log("Searching for puddle folder...", "DEBUG")
+    
     local paths = {
         function() return workspace.Map.Jobs.CleanNPC.Clean end,
         function() return workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Jobs") and workspace.Map.Jobs:FindFirstChild("CleanNPC") and workspace.Map.Jobs.CleanNPC:FindFirstChild("Clean") end,
     }
     
-    for _, pathFunc in ipairs(paths) do
+    for i, pathFunc in ipairs(paths) do
         local folder = pathFunc()
-        if folder then return folder end
+        if folder then 
+            log(string.format("✓ Found puddle folder at path %d: %s", i, folder:GetFullName()), "INFO")
+            return folder 
+        end
+        log(string.format("Path %d failed", i), "DEBUG")
     end
     
     log("Puddle folder not found in workspace", "WARN")
@@ -82,24 +102,40 @@ end
 -- Get puddles sorted by distance
 local function getPuddles()
     local folder = getPuddleFolder()
-    if not folder then return {} end
+    if not folder then 
+        log("Cannot get puddles: folder not found", "WARN")
+        return {} 
+    end
     
     local hrp = getHRP()
-    if not hrp then return {} end
+    if not hrp then 
+        log("Cannot get puddles: HRP not found", "WARN")
+        return {} 
+    end
     
     local list = {}
+    log(string.format("Checking %d puddle slots...", Config.TotalPuddles), "DEBUG")
     
     for i = 1, Config.TotalPuddles do
         local part = folder:FindFirstChild(tostring(i))
-        if part and isCleanable(part) then
-            local dist = (hrp.Position - part.Position).Magnitude
-            table.insert(list, {part = part, dist = dist, index = i})
+        if part then
+            log(string.format("  [%d] Found part: %s", i, part.Name), "DEBUG")
+            if isCleanable(part) then
+                local dist = (hrp.Position - part.Position).Magnitude
+                log(string.format("    ✓ Cleanable! Distance: %.1f", dist), "DEBUG")
+                table.insert(list, {part = part, dist = dist, index = i})
+            else
+                log(string.format("    ✗ Not cleanable", part.Name), "DEBUG")
+            end
+        else
+            log(string.format("  [%d] No part found", i), "DEBUG")
         end
     end
     
     -- Sort by distance
     table.sort(list, function(a, b) return a.dist < b.dist end)
     
+    log(string.format("Total cleanable puddles: %d", #list), "INFO")
     return list
 end
 
@@ -115,7 +151,10 @@ end
 -- Smooth tween movement with safety
 local function tweenTo(targetPos)
     local hrp = getHRP()
-    if not hrp then return false end
+    if not hrp then 
+        log("tweenTo: HRP not found", "WARN")
+        return false 
+    end
     
     -- Cancel previous tween
     cancelTween()
@@ -147,11 +186,11 @@ local function tweenTo(targetPos)
     
     tween.Completed:Connect(function()
         isMoving = false
+        log("Tween completed", "DEBUG")
     end)
     
+    log(string.format("🎯 Starting tween (distance: %.1f, time: %.2fs)", distance, time), "INFO")
     tween:Play()
-    
-    log(string.format("Tweening to puddle (distance: %.1f, time: %.2fs)", distance, time), "DEBUG")
     
     return true
 end
@@ -171,9 +210,9 @@ local function clean(part)
     end)
     
     if success then
-        log("Cleaned puddle: " .. part.Name, "DEBUG")
+        log("✓ Cleaned puddle: " .. part.Name, "INFO")
     else
-        log("Failed to clean puddle: " .. part.Name, "WARN")
+        log("✗ Failed to clean puddle: " .. part.Name, "WARN")
     end
     
     return success
@@ -181,15 +220,25 @@ end
 
 -- Move to puddle and clean it
 local function goClean(part)
-    if not isCleanable(part) then return false end
+    if not isCleanable(part) then 
+        log("goClean: part not cleanable", "DEBUG")
+        return false 
+    end
+    
+    log(string.format("🚀 Moving to puddle: %s", part.Name), "INFO")
     
     -- Move to puddle
-    if not tweenTo(part.Position) then return false end
+    if not tweenTo(part.Position) then 
+        log("goClean: tweenTo failed", "WARN")
+        return false 
+    end
     
     -- Wait for movement to complete
     while isMoving do
         task.wait(0.1)
     end
+    
+    log("Movement complete, checking puddle...", "DEBUG")
     
     -- Check if still cleanable after movement
     if not isCleanable(part) then
@@ -199,7 +248,10 @@ local function goClean(part)
     
     -- Verify arrival distance
     local hrp = getHRP()
-    if not hrp then return false end
+    if not hrp then 
+        log("goClean: HRP lost after movement", "WARN")
+        return false 
+    end
     
     local distance = (hrp.Position - part.Position).Magnitude
     if distance > Config.ArriveDistance then
@@ -222,6 +274,8 @@ task.spawn(function()
         
         if not Config.Enabled then continue end
         
+        log("--- POLL CYCLE ---", "DEBUG")
+        
         -- Safety check: character exists
         local hrp = getHRP()
         if not hrp then
@@ -233,11 +287,11 @@ task.spawn(function()
         local puddles = getPuddles()
         
         if #puddles == 0 then
-            log("No cleanable puddles found", "DEBUG")
+            log("❌ No cleanable puddles found", "WARN")
             continue
         end
         
-        log(string.format("Found %d cleanable puddles", #puddles), "DEBUG")
+        log(string.format("📍 Found %d cleanable puddles, processing...", #puddles), "INFO")
         
         for _, data in ipairs(puddles) do
             if not Config.Enabled then break end
@@ -263,12 +317,12 @@ pcall(function()
         
         if input.KeyCode == Enum.KeyCode.J then
             Config.Enabled = not Config.Enabled
-            log(string.format("Auto-clean %s", Config.Enabled and "ENABLED" or "DISABLED"), "INFO")
+            log(string.format("⚙️ Auto-clean %s", Config.Enabled and "ENABLED" or "DISABLED"), "INFO")
         elseif input.KeyCode == Enum.KeyCode.K then
             -- Emergency stop
             Config.Enabled = false
             cancelTween()
-            log("Emergency stop activated", "WARN")
+            log("🛑 Emergency stop activated", "WARN")
         end
     end)
 end)
