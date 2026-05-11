@@ -78,10 +78,9 @@ local function tweenTo(targetPos)
     local distance = dist3D(startPos, targetPos)
     local time = math.clamp(distance * 0.08 / Config.TweenSpeed, 0.2, 1.5)
 
-    local direction = (targetPos - startPos).Unit
-    local lookCFrame = CFrame.lookAt(startPos, startPos + direction)
-    local goalCFrame = CFrame.new(targetPos + Vector3.new(0, 3, 0)) * 
-        CFrame.Angles(0, select(2, lookCFrame:ToEulerAnglesYXZ()), 0)
+    -- Create goal CFrame properly
+    local goalPos = targetPos + Vector3.new(0, 3, 0)
+    local goalCFrame = CFrame.new(goalPos)
 
     local tweenInfo = TweenInfo.new(
         time,
