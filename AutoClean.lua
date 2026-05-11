@@ -12,15 +12,9 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
-local player = Players.LocalPlayer
+local player = nil
 local currentTween = nil
 local isMoving = false
-
--- Wait for player to fully load
-if not player then
-    Players.PlayerAdded:Wait()
-    player = Players.LocalPlayer
-end
 
 -- Utility: Safe logging
 local function log(message, level)
@@ -29,8 +23,17 @@ local function log(message, level)
     print(string.format("[AutoClean %s] %s", level, message))
 end
 
+-- Wait for player to load
+local function waitForPlayer()
+    if Players.LocalPlayer then
+        return Players.LocalPlayer
+    end
+    return Players.PlayerAdded:Wait()
+end
+
 -- Character helpers with safety checks
 local function getChar()
+    if not player then return nil end
     if player.Character and player.Character:FindFirstChild("Humanoid") then
         return player.Character
     end
@@ -213,6 +216,8 @@ end
 
 -- Main loop
 task.spawn(function()
+    log("Waiting for player...", "INFO")
+    player = waitForPlayer()
     log("Auto-clean script started", "INFO")
     
     while true do
@@ -255,28 +260,39 @@ task.spawn(function()
 end)
 
 -- Toggle with J key (safe input handling)
-pcall(function()
-    UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed then return end
-        
-        if input.KeyCode == Enum.KeyCode.J then
-            Config.Enabled = not Config.Enabled
-            log(string.format("Auto-clean %s", Config.Enabled and "ENABLED" or "DISABLED"), "INFO")
-        elseif input.KeyCode == Enum.KeyCode.K then
-            -- Emergency stop
-            Config.Enabled = false
-            cancelTween()
-            log("Emergency stop activated", "WARN")
-        end
+task.spawn(function()
+    log("Waiting for input service...", "INFO")
+    while not player do
+        task.wait(0.1)
+    end
+    
+    pcall(function()
+        UserInputService.InputBegan:Connect(function(input, gameProcessed)
+            if gameProcessed then return end
+            
+            if input.KeyCode == Enum.KeyCode.J then
+                Config.Enabled = not Config.Enabled
+                log(string.format("Auto-clean %s", Config.Enabled and "ENABLED" or "DISABLED"), "INFO")
+            elseif input.KeyCode == Enum.KeyCode.K then
+                -- Emergency stop
+                Config.Enabled = false
+                cancelTween()
+                log("Emergency stop activated", "WARN")
+            end
+        end)
     end)
 end)
 
 -- Cleanup on character death (safe event connection)
-if player and player.CharacterAdded then
+task.spawn(function()
+    while not player do
+        task.wait(0.1)
+    end
+    
     player.CharacterAdded:Connect(function()
         cancelTween()
         log("Character respawned, movement cancelled", "DEBUG")
     end)
-end
+end)
 
 log(string.format("Configuration loaded (TweenSpeed: %.1f, ArriveDistance: %d)", Config.TweenSpeed, Config.ArriveDistance), "INFO")
