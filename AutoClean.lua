@@ -64,10 +64,13 @@ local function isCleanable(part)
     return true
 end
 
--- Tween movement
+-- Tween movement - FIXED
 local function tweenTo(targetPos)
     local hrp = getHRP()
-    if not hrp then return false end
+    if not hrp or not targetPos then 
+        log("tweenTo: missing HRP or targetPos", "WARN")
+        return false 
+    end
 
     if currentTween then
         pcall(function() currentTween:Cancel() end)
@@ -75,10 +78,14 @@ local function tweenTo(targetPos)
     end
 
     local startPos = hrp.Position
-    local distance = dist3D(startPos, targetPos)
-    local time = math.clamp(distance * 0.08 / Config.TweenSpeed, 0.2, 1.5)
+    if not startPos or not targetPos then return false end
+    
+    local distance = (targetPos - startPos).Magnitude
+    if distance < 0.1 then return true end -- Already there
+    
+    local time = math.clamp(distance / 30 * Config.TweenSpeed, 0.2, 1.5)
 
-    -- Create goal CFrame properly
+    -- Simple CFrame: just the position
     local goalPos = targetPos + Vector3.new(0, 3, 0)
     local goalCFrame = CFrame.new(goalPos)
 
@@ -109,7 +116,6 @@ end
 local function zeroPrompt(prompt)
     if not prompt then return end
     pcall(function()
-        -- Try to find and zero the hold duration property
         if prompt:FindFirstChild("HoldDuration") then
             prompt.HoldDuration.Value = 0
         end
